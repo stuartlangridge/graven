@@ -14,6 +14,7 @@ class SVG2Cairo(object):
     def __init__(self, debug=False):
         self.svg_string = None
         self.debug = debug
+        self.converted_result = None
 
     def set_svg_as_string_sync(self, svg_string):
         self.svg_string = svg_string
@@ -168,6 +169,7 @@ class SVG2Cairo(object):
         return instructions
 
     def convert(self):
+        if self.converted_result: return self.converted_result
         dom = minidom.parseString(self.svg_string)
         instructions = []
         if not dom.documentElement.hasAttribute("viewBox"):
@@ -210,35 +212,49 @@ class SVG2Cairo(object):
                 else:
                     if self.debug:
                         print("Unknown SVG element <%s>" % (c.nodeName,))
-        result = {"width": width, "height": height, "instructions": instructions}
-        return result
+        self.converted_result = {"width": width, "height": height, "instructions": instructions}
+        return self.converted_result
 
-    def render(self, to_png):
-        # This is a test function. You ought to not be using this when you call the library.
-        # It's an example of how to do it.
-        # Pay attention to the magical trickery of set_line_width.
-
-        # We're going to scale this down, to get a half-size image
+    def render_to_context_at_size(self, context, x, y, width, height):
+        """Renders this SVG inside a box of max-size width x height at 0,0
+           This preserves aspect ratio.
+        """
+        # We scale the image down to fit in the requested box.
         # However, this means that we want to scale line_width UP, because
         # we want line_widths to always be the same width as the original image
         # specifies, no matter how big or small the image is.
         # This avoids the problem that making a speech bubble smaller also
         # makes its borders thinner.
-        SCALE = 0.4
+
         result = self.convert()
-        base = cairo.ImageSurface(cairo.FORMAT_ARGB32, int(result["width"] * SCALE), int(result["height"] * SCALE))
-        ctx = cairo.Context(base)
-        ctx.scale(SCALE, SCALE)
+
+        # stash the current context so we can put it back at the end
+        context.save()
+
+        # scale the context matrix so we fit in the required box
+        width_scale = width / result["width"]
+        height_scale = height / result["height"]
+        scale = min(width_scale, height_scale)
+        context.translate(x, y)
+        context.scale(scale, scale)
+
         for cmd, params in result.get("instructions", []):
             if self.debug: print (cmd, params)
             if cmd == "set_line_width":
-                params[0] = params[0] * (1/SCALE)
-            if cmd == "multiply_by_matrix":
-                current_matrix = ctx.get_matrix()
-                new_matrix = current_matrix.multiply(params[0])
-                params[0] = new_matrix
-                cmd = "set_matrix"
-            getattr(ctx, cmd)(*params)
+                params[0] = params[0] * (1/scale)
+            getattr(context, cmd)(*params)
+
+        context.restore()
+        return {"width": result["width"] * scale, "height": result["height"] * scale}
+
+    def test_render(self, to_png):
+        SCALE = 0.4
+        result = self.convert() # call this here to get the width and height
+        scale_w = int(result["width"] * SCALE)
+        scale_h = int(result["height"] * SCALE)
+        base = cairo.ImageSurface(cairo.FORMAT_ARGB32, scale_w, scale_h)
+        ctx = cairo.Context(base)
+        self.render_to_context_at_size(ctx, 0, 0, scale_w, scale_h)
         base.write_to_png(to_png)
 
 
@@ -250,4 +266,4 @@ if __name__ == "__main__":
     fp.close()
     c = SVG2Cairo(debug=True)
     c.set_svg_as_string_sync(svg_string)
-    c.render(outgoing_png)
+    c.test_render(outgoing_png)
