@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   version="1.1"
+   id="svg2"
+   viewBox="0 0 1324.6031 938.29139"
+   height="264.80667mm"
+   width="373.83246mm"
+   inkscape:version="0.91 r13725"
+   sodipodi:docname="burst.bubble.svg">
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1346"
+     inkscape:window-height="778"
+     id="namedview8"
+     showgrid="false"
+     inkscape:zoom="0.46745212"
+     inkscape:cx="534.51389"
+     inkscape:cy="414.45748"
+     inkscape:window-x="402"
+     inkscape:window-y="252"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg2" />
+  <defs
+     id="defs4" />
+  <metadata
+     id="metadata7">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title></dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <path
+     inkscape:connector-curvature="0"
+     style="opacity:1;fill:#ffffff;fill-opacity:1;stroke:#000000;stroke-width:20;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+     id="path4136"
+     d="M 1085.2229,575.18714 1155.1224,749.76021 890.77523,742.02138 780.28899,906.48879 585.05886,784.32003 345.8846,861.72564 311.12187,682.29107 55.171887,636.41594 197.14243,483.67499 44.178559,335.98462 296.45278,281.40648 l 21.59575,-180.39963 244.53598,69.12234 186.05046,-128.6979 122.37666,160.47973 263.45007,-16.77701 -57.0441,176.7469 217.5785,102.99405 z" />
+  <rect
+     style="opacity:1;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:10;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1"
+     id="textbox"
+     width="682.85724"
+     height="397.14288"
+     x="344.43134"
+     y="278.20917" />
+</svg>
