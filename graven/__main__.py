@@ -316,21 +316,16 @@ class Main(object):
 
     def show_image_pixbuf(self, pb):
         self.img = Gtk.Image.new_from_pixbuf(pb)
-        self.da = Gtk.DrawingArea()
-        self.da.set_size_request(pb.get_width(), pb.get_height())
-        self.da.set_events(Gdk.EventMask.BUTTON_MOTION_MASK | 
-            Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
         self.show_image()
 
     def show_image(self):
         if self.img:
             print("showing image")
             self.w.remove(self.w.get_children()[0])
-            fixed = Gtk.Fixed()
-            fixed.add(self.img)
-            fixed.add(self.da)
-            self.w.add(fixed)
-            fixed.show_all()
+            self.fixed = Gtk.Fixed()
+            self.fixed.add(self.img)
+            self.w.add(self.fixed)
+            self.fixed.show_all()
             self.btncrop.set_sensitive(True)
             self.btnbubble.set_sensitive(True)
 
@@ -341,6 +336,13 @@ class Main(object):
             self.remove_crop_mode()
 
     def draw_crop_mode(self):
+        alloc = self.fixed.get_allocation()
+        self.da = Gtk.DrawingArea()
+        self.da.set_size_request(alloc.width, alloc.height)
+        self.da.set_events(Gdk.EventMask.BUTTON_MOTION_MASK | 
+            Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
+        self.fixed.add(self.da)
+        self.da.show_all()
         self.crop_apply_id = self.btnapply.connect("clicked", self.crop_apply)
         self.btnapply.set_sensitive(True)
         self.handle_rectangles = []
@@ -410,9 +412,11 @@ class Main(object):
     def remove_crop_mode(self):
         print("remove crop")
         self.btnapply.set_sensitive(False)
+        self.btncrop.set_active(False)
         self.da.disconnect(self.crop_mousedown_id)
         self.da.disconnect(self.crop_mouseup_id)
         self.btnapply.disconnect(self.crop_apply_id)
+        self.da.destroy()
 
     def crop_mousedown(self, widget, event):
         in_handle = False
@@ -478,10 +482,54 @@ class Main(object):
         self.da.queue_draw()
 
     def crop_mouseup(self, *args):
-        self.da.disconnect(self.crop_mousemove_id)
+        if hasattr(self, "crop_mousemove_id"): self.da.disconnect(self.crop_mousemove_id)
 
-    def bubble_chosen(self, *args):
-        print("bubble chosen", args)
+    def bubble_chosen(self, mi, s2c):
+        print("bubble chosen", s2c)
+        alloc = self.fixed.get_allocation()
+        self.da = Gtk.DrawingArea()
+        self.da.set_size_request(alloc.width, alloc.height)
+        self.da.set_events(Gdk.EventMask.BUTTON_MOTION_MASK | 
+            Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
+        self.fixed.add(self.da)
+        self.da.show_all()
+        self.bubble_apply_id = self.btnapply.connect("clicked", self.bubble_apply)
+        self.btnapply.set_sensitive(True)
+        self.bubble_resize_handle_rectangles = []
+        self.bubble_mousedown_id = self.da.connect("button-press-event", self.bubble_mousedown)
+        self.bubble_mouseup_id = self.da.connect("button-release-event", self.bubble_mouseup)
+        self.da.connect("draw", self.actually_draw_bubble, s2c)
+        self.da.queue_draw()
+
+    def bubble_mousedown(self, widget, event):
+        print("bb md", event.x, event.y)
+        for r, loc in self.bubble_resize_handle_rectangles:
+            if in_rectangle(event, r):
+                print("bubble md IN RESIZE", loc)
+    def bubble_mouseup(self, widget, event):
+        print("bb mu", event.x, event.y)
+    def bubble_apply(self, btn):
+        print("bb apply")
+    def actually_draw_bubble(self, da, context, s2c):
+        bounding_box = (100, 100, 200, 200)
+        details = s2c.render_to_context_at_size(context, *bounding_box)
+        context.rectangle(bounding_box[0], bounding_box[1], details["width"], details["height"])
+        context.set_line_width(2)
+        context.set_source_rgba(255, 0, 0, 0.9)
+        context.set_dash([5])
+        context.stroke()
+
+        handle_width = 6 # must be even
+        self.bubble_resize_handle_rectangles = (
+            ((bounding_box[0] - (handle_width/2), bounding_box[1] - (handle_width/2), 
+                details["width"] + (handle_width), handle_width), "top"),
+            ((bounding_box[0] - (handle_width/2), bounding_box[1] + details["height"] - (handle_width/2), 
+                details["width"] + (handle_width), handle_width), "bottom"),
+            ((bounding_box[0] - (handle_width/2), bounding_box[1] - (handle_width/2), 
+                handle_width, details["height"] + (handle_width)), "left"),
+            ((bounding_box[0] + details["width"] - (handle_width/2), bounding_box[1] - (handle_width/2), 
+                handle_width, details["height"] + (handle_width)), "right")
+        )
 
 def main():
     m = Main()
