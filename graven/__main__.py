@@ -100,14 +100,21 @@ class Main(object):
         self.app.connect("command-line", self.handle_commandline)
 
     def handle_commandline(self, app, cmdline):
+        args = cmdline.get_arguments()[1:]
+        options = [x for x in args if x.startswith("--")]
+        nonoptions = [x for x in args if not x.startswith("--")]
         if hasattr(self, "w"):
             # already started
-            if "--about" in cmdline.get_arguments():
+            if "--about" in options:
                 self.show_about_dialog()
+                if nonoptions:
+                    self.show_image_path(nonoptions[0])
             return 0
         self.start_everything_first_time()
-        if "--about" in cmdline.get_arguments():
+        if "--about" in options:
             self.show_about_dialog()
+        if nonoptions:
+            self.show_image_path(nonoptions[0])
         return 0
 
     def start_everything_first_time(self, on_window_map=None):
@@ -494,45 +501,105 @@ class Main(object):
             Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
         self.fixed.add(self.da)
 
-        self.bubble_boundingbox = (alloc.width * 0.6, alloc.height * 0.6, alloc.width * 0.2, alloc.height * 0.2)
+        self.bubble_tl_br_box = [alloc.width * 0.6, alloc.height * 0.3, alloc.width * 0.8, alloc.height * 0.5]
 
         self.da.show_all()
         self.bubble_apply_id = self.btnapply.connect("clicked", self.bubble_apply)
         self.btnapply.set_sensitive(True)
         self.bubble_resize_handle_rectangles = []
         self.bubble_mousedown_id = self.da.connect("button-press-event", self.bubble_mousedown)
-        self.bubble_mouseup_id = self.da.connect("button-release-event", self.bubble_mouseup)
         self.da.connect("draw", self.actually_draw_bubble, s2c)
         self.da.queue_draw()
 
     def bubble_mousedown(self, widget, event):
-        print("bb md", event.x, event.y)
+        print("bb md", event.x, event.y, event.time)
+        self.bubble_clicked_event_details = (event.x, event.y, event.time)
+        in_resize = False
         for r, loc in self.bubble_resize_handle_rectangles:
             if in_rectangle(event, r):
                 print("bubble md IN RESIZE", loc)
-    def bubble_mouseup(self, widget, event):
-        print("bb mu", event.x, event.y)
+                bubble_mousemove_id = self.da.connect("motion-notify-event", self.bubble_mm_resize, loc)
+                self.bubble_mousedown_id = self.da.connect("button-release-event", self.bubble_mouseup, bubble_mousemove_id)
+                in_resize = True
+        if not in_resize:
+            bbox = (self.bubble_tl_br_box[0], self.bubble_tl_br_box[1], 
+                self.bubble_tl_br_box[2]-self.bubble_tl_br_box[0],
+                self.bubble_tl_br_box[3]-self.bubble_tl_br_box[1])
+            if in_rectangle(event, bbox):
+                print("bubble md IN RESIZE", loc)
+                bubble_mousemove_id = self.da.connect("motion-notify-event", self.bubble_mm_move, (copy.copy(self.bubble_tl_br_box), event.x, event.y))
+                self.bubble_mousedown_id = self.da.connect("button-release-event", self.bubble_mouseup, bubble_mousemove_id)
+
+    def bubble_mm_move(self, widget, event, data):
+        original_tlbr, startx, starty = data
+        dx = event.x - startx
+        dy = event.y - starty
+        self.bubble_tl_br_box = [
+            original_tlbr[0] + dx,
+            original_tlbr[1] + dy,
+            original_tlbr[2] + dx,
+            original_tlbr[3] + dy
+        ]
+        self.da.queue_draw()
+
+    def bubble_mm_resize(self, widget, event, resize_dir):
+        print("bb resize", resize_dir)
+        if resize_dir == "tl":
+            self.bubble_tl_br_box[0] = event.x
+            self.bubble_tl_br_box[1] = event.y
+        elif resize_dir == "br":
+            self.bubble_tl_br_box[2] = event.x
+            self.bubble_tl_br_box[3] = event.y
+        self.da.queue_draw()
+
+    def bubble_mouseup(self, widget, event, mousemove_unbind_id=None):
+        print("bb mu")
+        if mousemove_unbind_id:
+            self.da.disconnect(mousemove_unbind_id)
+        if self.bubble_mousedown_id:
+            self.da.disconnect(self.bubble_mousedown_id)
+        dx = abs(event.x - self.bubble_clicked_event_details[0])
+        dy = abs(event.y - self.bubble_clicked_event_details[1])
+        dt = event.time - self.bubble_clicked_event_details[2]
+        if (dx < 2 and dy < 2 and dt < 100):
+            self.bubble_clicked()
+
+    def bubble_clicked(self):
+        print("bubble clicked")
+
     def bubble_apply(self, btn):
         print("bb apply")
     def actually_draw_bubble(self, da, context, s2c):
-        details = s2c.render_to_context_at_size(context, *self.bubble_bounding_box)
-        context.rectangle(self.bubble_bounding_box[0], self.bubble_bounding_box[1], details["width"], details["height"])
+        print("draw", self.bubble_tl_br_box)
+        # bubble_tl_br_box holds coordinates; make a standard x,y,w,h box
+        bbox = (self.bubble_tl_br_box[0], self.bubble_tl_br_box[1], 
+            self.bubble_tl_br_box[2]-self.bubble_tl_br_box[0],
+            self.bubble_tl_br_box[3]-self.bubble_tl_br_box[1])
+        details = s2c.render_to_context_at_size(context, *bbox)
+        context.rectangle(*bbox)
         context.set_line_width(2)
         context.set_source_rgba(255, 0, 0, 0.9)
         context.set_dash([5])
         context.stroke()
 
         handle_width = 6 # must be even
+        handle_length = min(bbox[2]/6, bbox[3]/6)
         self.bubble_resize_handle_rectangles = (
-            ((self.bubble_bounding_box[0] - (handle_width/2), self.bubble_bounding_box[1] - (handle_width/2), 
-                details["width"] + (handle_width), handle_width), "top"),
-            ((self.bubble_bounding_box[0] - (handle_width/2), self.bubble_bounding_box[1] + details["height"] - (handle_width/2), 
-                details["width"] + (handle_width), handle_width), "bottom"),
-            ((self.bubble_bounding_box[0] - (handle_width/2), self.bubble_bounding_box[1] - (handle_width/2), 
-                handle_width, details["height"] + (handle_width)), "left"),
-            ((self.bubble_bounding_box[0] + details["width"] - (handle_width/2), self.bubble_bounding_box[1] - (handle_width/2), 
-                handle_width, details["height"] + (handle_width)), "right")
+            ((bbox[0] - (handle_width/2), bbox[1] - (handle_width/2), 
+                handle_length, handle_width), "tl"), # horizontal tl
+            ((bbox[0] - (handle_width/2), bbox[1] - (handle_width/2), 
+                handle_width, handle_length), "tl"), # vertical tl
+            ((self.bubble_tl_br_box[2] - handle_length + (handle_width/2),
+              self.bubble_tl_br_box[3] - (handle_width/2),
+              handle_length, handle_width), "br"), # horizontal br
+            ((self.bubble_tl_br_box[2] - (handle_width/2),
+              self.bubble_tl_br_box[3] - handle_length + (handle_width/2),
+              handle_width, handle_length), "br") # vertical br
         )
+        context.set_source_rgba(0, 128, 0, 1)
+        for r, loc in self.bubble_resize_handle_rectangles:
+            context.rectangle(*r)
+        context.fill()
 
 def main():
     m = Main()
