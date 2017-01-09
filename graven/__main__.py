@@ -486,12 +486,16 @@ class Main(object):
 
     def bubble_chosen(self, mi, s2c):
         print("bubble chosen", s2c)
+
         alloc = self.fixed.get_allocation()
         self.da = Gtk.DrawingArea()
         self.da.set_size_request(alloc.width, alloc.height)
         self.da.set_events(Gdk.EventMask.BUTTON_MOTION_MASK | 
             Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK)
         self.fixed.add(self.da)
+
+        self.bubble_boundingbox = (alloc.width * 0.6, alloc.height * 0.6, alloc.width * 0.2, alloc.height * 0.2)
+
         self.da.show_all()
         self.bubble_apply_id = self.btnapply.connect("clicked", self.bubble_apply)
         self.btnapply.set_sensitive(True)
@@ -511,9 +515,8 @@ class Main(object):
     def bubble_apply(self, btn):
         print("bb apply")
     def actually_draw_bubble(self, da, context, s2c):
-        bounding_box = (100, 100, 200, 200)
-        details = s2c.render_to_context_at_size(context, *bounding_box)
-        context.rectangle(bounding_box[0], bounding_box[1], details["width"], details["height"])
+        details = s2c.render_to_context_at_size(context, *self.bubble_bounding_box)
+        context.rectangle(self.bubble_bounding_box[0], self.bubble_bounding_box[1], details["width"], details["height"])
         context.set_line_width(2)
         context.set_source_rgba(255, 0, 0, 0.9)
         context.set_dash([5])
@@ -521,13 +524,13 @@ class Main(object):
 
         handle_width = 6 # must be even
         self.bubble_resize_handle_rectangles = (
-            ((bounding_box[0] - (handle_width/2), bounding_box[1] - (handle_width/2), 
+            ((self.bubble_bounding_box[0] - (handle_width/2), self.bubble_bounding_box[1] - (handle_width/2), 
                 details["width"] + (handle_width), handle_width), "top"),
-            ((bounding_box[0] - (handle_width/2), bounding_box[1] + details["height"] - (handle_width/2), 
+            ((self.bubble_bounding_box[0] - (handle_width/2), self.bubble_bounding_box[1] + details["height"] - (handle_width/2), 
                 details["width"] + (handle_width), handle_width), "bottom"),
-            ((bounding_box[0] - (handle_width/2), bounding_box[1] - (handle_width/2), 
+            ((self.bubble_bounding_box[0] - (handle_width/2), self.bubble_bounding_box[1] - (handle_width/2), 
                 handle_width, details["height"] + (handle_width)), "left"),
-            ((bounding_box[0] + details["width"] - (handle_width/2), bounding_box[1] - (handle_width/2), 
+            ((self.bubble_bounding_box[0] + details["width"] - (handle_width/2), self.bubble_bounding_box[1] - (handle_width/2), 
                 handle_width, details["height"] + (handle_width)), "right")
         )
 

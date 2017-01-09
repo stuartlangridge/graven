@@ -241,8 +241,9 @@ class SVG2Cairo(object):
         for cmd, params in result.get("instructions", []):
             if self.debug: print (cmd, params)
             if cmd == "set_line_width":
-                params[0] = params[0] * (1/scale)
-            getattr(context, cmd)(*params)
+                getattr(context, cmd)(params[0] * (1/scale))
+            else:
+                getattr(context, cmd)(*params)
 
         context.restore()
         return {"width": result["width"] * scale, "height": result["height"] * scale}
