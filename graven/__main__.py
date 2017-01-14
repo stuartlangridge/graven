@@ -2,7 +2,7 @@
 import gi
 gi.require_version('Gtk', '3.0')
 gi.require_version('PangoCairo', '1.0')
-from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Gio, Pango, PangoCairo, cairo
+from gi.repository import Gtk, Gdk, GLib, GdkPixbuf, Gio, cairo
 import math, os, codecs, sys, json, copy, glob
 import svg2cairo
 
@@ -14,69 +14,6 @@ def in_rectangle(point, rect):
     if point.x > rect[0] and point.y > rect[1] and point.x < rect[0]+rect[2] and point.y < rect[1]+rect[3]:
         return True
     return False
-
-def fit_text(text, font_name, max_width, max_height):
-    """Given some text and a font name, returns a Pango.Layout which is as
-       big as possible but still smaller than max_width x max_height.
-
-       Example usage:
-       ly = fit_text("The mask.\nThe ray-traced picture.\nAnd finally,\nthe wireframe city.", "Impact", 800, 800)
-       sz = ly.get_pixel_size()
-       base = cairo.ImageSurface(cairo.FORMAT_ARGB32, sz.width, sz.height)
-       base_context = cairo.Context(base)
-       PangoCairo.show_layout(base_context, ly)
-       base.write_to_png("mytext.png")
-    """
-    fm = PangoCairo.font_map_get_default()
-    fonts = [x.get_name() for x in fm.list_families() if x.get_name() in ALLOWED_FONTS]
-    if not fonts:
-        raise Exception("No allowed fonts were found")
-    if font_name not in fonts:
-        raise Exception("Font name '%s' isn't on the allowed fonts list" % font_name)
-    ctx = fm.create_context()
-    ly = Pango.Layout.new(ctx)
-    fd = Pango.FontDescription.new()
-    ly.set_single_paragraph_mode(False)
-    ly.set_alignment(Pango.Alignment.CENTER)
-    fd.set_family(font_name)
-    ly.set_text(text, -1)
-    # now, binary search to find the biggest integer font size that still fits
-    # first, quickly find a setting which is bigger than the right size
-    size = 100
-    loopcount = 0
-    while 1:
-        loopcount += 1
-        if loopcount > 10000:
-            print("Got stuck finding font size; crashing")
-            sys.exit(1)
-        fd.set_absolute_size(size)
-        ly.set_font_description(fd)
-        s = ly.get_pixel_size()
-        if s.width > max_width or s.height > max_height:
-            # this one is bigger, so it's our start point for binary search
-            break
-        # this one's smaller, so double it and start again
-        size = size * 2
-    # now, binary search; we know this one's too big
-    first = 0
-    last = size
-    found = False
-    loopcount = 1
-    while first <= last:
-        loopcount += 1
-        if loopcount > 10000:
-            print("Got stuck finding font size; crashing")
-            sys.exit(1)
-        midpoint = ((first + last) // 2)
-        fd.set_absolute_size(midpoint)
-        ly.set_font_description(fd)
-        s = ly.get_pixel_size()
-        if s.width < max_width and s.height < max_height:
-            first = midpoint + 1
-        else:
-            last = midpoint - 1
-    return ly
-
 
 class Main(object):
 
@@ -502,6 +439,7 @@ class Main(object):
         self.fixed.add(self.da)
 
         self.bubble_tl_br_box = [alloc.width * 0.6, alloc.height * 0.3, alloc.width * 0.8, alloc.height * 0.5]
+        self.bubble_text = "LOL"
 
         self.da.show_all()
         self.bubble_apply_id = self.btnapply.connect("clicked", self.bubble_apply)
@@ -518,17 +456,20 @@ class Main(object):
         for r, loc in self.bubble_resize_handle_rectangles:
             if in_rectangle(event, r):
                 print("bubble md IN RESIZE", loc)
-                bubble_mousemove_id = self.da.connect("motion-notify-event", self.bubble_mm_resize, loc)
-                self.bubble_mousedown_id = self.da.connect("button-release-event", self.bubble_mouseup, bubble_mousemove_id)
+                self.disconnects = []
+                self.disconnects.append(self.da.connect("motion-notify-event", self.bubble_mm_resize, loc))
+                self.disconnects.append(self.da.connect("button-release-event", self.bubble_mouseup))
                 in_resize = True
+                break
         if not in_resize:
             bbox = (self.bubble_tl_br_box[0], self.bubble_tl_br_box[1], 
                 self.bubble_tl_br_box[2]-self.bubble_tl_br_box[0],
                 self.bubble_tl_br_box[3]-self.bubble_tl_br_box[1])
             if in_rectangle(event, bbox):
                 print("bubble md IN RESIZE", loc)
-                bubble_mousemove_id = self.da.connect("motion-notify-event", self.bubble_mm_move, (copy.copy(self.bubble_tl_br_box), event.x, event.y))
-                self.bubble_mousedown_id = self.da.connect("button-release-event", self.bubble_mouseup, bubble_mousemove_id)
+                self.disconnects = []
+                self.disconnects.append(self.da.connect("motion-notify-event", self.bubble_mm_move, (copy.copy(self.bubble_tl_br_box), event.x, event.y)))
+                self.disconnects.append(self.da.connect("button-release-event", self.bubble_mouseup))
 
     def bubble_mm_move(self, widget, event, data):
         original_tlbr, startx, starty = data
@@ -543,21 +484,18 @@ class Main(object):
         self.da.queue_draw()
 
     def bubble_mm_resize(self, widget, event, resize_dir):
-        print("bb resize", resize_dir)
         if resize_dir == "tl":
             self.bubble_tl_br_box[0] = event.x
             self.bubble_tl_br_box[1] = event.y
         elif resize_dir == "br":
             self.bubble_tl_br_box[2] = event.x
             self.bubble_tl_br_box[3] = event.y
+        print("bb resize", resize_dir, event.x, event.y, self.bubble_tl_br_box)
         self.da.queue_draw()
 
     def bubble_mouseup(self, widget, event, mousemove_unbind_id=None):
         print("bb mu")
-        if mousemove_unbind_id:
-            self.da.disconnect(mousemove_unbind_id)
-        if self.bubble_mousedown_id:
-            self.da.disconnect(self.bubble_mousedown_id)
+        for eid in self.disconnects: self.da.disconnect(eid)
         dx = abs(event.x - self.bubble_clicked_event_details[0])
         dy = abs(event.y - self.bubble_clicked_event_details[1])
         dt = event.time - self.bubble_clicked_event_details[2]
@@ -565,7 +503,35 @@ class Main(object):
             self.bubble_clicked()
 
     def bubble_clicked(self):
-        print("bubble clicked")
+        dia = Gtk.Dialog.new()
+        dia.set_modal(True)
+        dia.add_buttons("_OK", 0, "Cancel", 1)
+        dia.set_default_response(1)
+        dia.set_transient_for(self.w)
+        c = dia.get_content_area()
+        hb = Gtk.HBox()
+        hb.pack_start(Gtk.Label("Font"), False, False, 6)
+        hb.pack_start(Gtk.Label("Dropdown"), True, True, 6)
+        c.pack_start(hb, False, False, 6)
+        tv = Gtk.TextView.new()
+        tv.set_justification(Gtk.Justification.CENTER)
+        buf = tv.get_buffer()
+        buf.set_text(self.bubble_text)
+        c.pack_start(tv,True, True, 6)
+        c.show_all()
+        response = dia.run()
+        print("response", response)
+        if response == Gtk.ResponseType.DELETE_EVENT:
+            print("closed")
+        elif response == 1:
+            print("cancelled")
+        elif response == 0:
+            bounds = buf.get_bounds()
+            self.bubble_text = buf.get_text(bounds[0], bounds[1], False)
+            print("ok")
+        else:
+            print("something else")
+        dia.destroy()
 
     def bubble_apply(self, btn):
         print("bb apply")
@@ -575,7 +541,9 @@ class Main(object):
         bbox = (self.bubble_tl_br_box[0], self.bubble_tl_br_box[1], 
             self.bubble_tl_br_box[2]-self.bubble_tl_br_box[0],
             self.bubble_tl_br_box[3]-self.bubble_tl_br_box[1])
-        details = s2c.render_to_context_at_size(context, *bbox)
+        print("bbox", bbox)
+        details = s2c.render_to_context_at_size_with_text(context, 
+            bbox[0], bbox[1], bbox[2], bbox[3], self.bubble_text, "Impact")
         context.rectangle(*bbox)
         context.set_line_width(2)
         context.set_source_rgba(255, 0, 0, 0.9)

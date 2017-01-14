@@ -1,12 +1,75 @@
 #!/usr/bin/env python3
 
 """A very, very simple thing to read an SVG and convert it to a list of cairo drawing instructions.
-Will likely fail on your SVG."""
+Will likely fail on your SVG. Pretty specific to graven, with graven-specific helpers."""
 
-from gi.repository import Gio
+import gi
+gi.require_version('PangoCairo', '1.0')
+gi.require_version('Pango', '1.0')
+from gi.repository import Gio, Pango, PangoCairo
 from xml.dom import minidom
 import sys
 import cairo
+
+def fit_text(text, font_name, max_width, max_height):
+    """Given some text and a font name, returns a Pango.Layout which is as
+       big as possible but still smaller than max_width x max_height.
+
+       Example usage:
+       ly = fit_text("The mask.\nThe ray-traced picture.\nAnd finally,\nthe wireframe city.", "Impact", 800, 800)
+       sz = ly.get_pixel_size()
+       base = cairo.ImageSurface(cairo.FORMAT_ARGB32, sz.width, sz.height)
+       base_context = cairo.Context(base)
+       PangoCairo.show_layout(base_context, ly)
+       base.write_to_png("mytext.png")
+    """
+    fm = PangoCairo.font_map_get_default()
+    fonts = [x.get_name() for x in fm.list_families()]
+    if font_name not in fonts:
+        raise Exception("Font name '%s' isn't on the fonts list" % font_name)
+    ctx = fm.create_context()
+    ly = Pango.Layout.new(ctx)
+    fd = Pango.FontDescription.new()
+    ly.set_single_paragraph_mode(False)
+    ly.set_alignment(Pango.Alignment.CENTER)
+    fd.set_family(font_name)
+    ly.set_text(text, -1)
+    # now, binary search to find the biggest integer font size that still fits
+    # first, quickly find a setting which is bigger than the right size
+    size = 100
+    loopcount = 0
+    while 1:
+        loopcount += 1
+        if loopcount > 10000:
+            print("Got stuck finding font size; crashing")
+            sys.exit(1)
+        fd.set_absolute_size(size)
+        ly.set_font_description(fd)
+        s = ly.get_pixel_size()
+        if s.width > max_width or s.height > max_height:
+            # this one is bigger, so it's our start point for binary search
+            break
+        # this one's smaller, so double it and start again
+        size = size * 2
+    # now, binary search; we know this one's too big
+    first = 0
+    last = size
+    found = False
+    loopcount = 1
+    while first <= last:
+        loopcount += 1
+        if loopcount > 10000:
+            print("Got stuck finding font size; crashing")
+            sys.exit(1)
+        midpoint = ((first + last) // 2)
+        fd.set_absolute_size(midpoint)
+        ly.set_font_description(fd)
+        s = ly.get_pixel_size()
+        if s.width < max_width and s.height < max_height:
+            first = midpoint + 1
+        else:
+            last = midpoint - 1
+    return ly
 
 class SVG2Cairo(object):
     IGNORE_ELEMENTS = ["defs", "metadata", "sodipodi:namedview"]
@@ -168,6 +231,20 @@ class SVG2Cairo(object):
                 return
         return instructions
 
+    def read_textbox(self, node):
+        if node.nodeName == "rect":
+            if not self.expect(node, ["x", "y", "width", "height"]): return
+            return [
+                float(node.getAttribute("x")),
+                float(node.getAttribute("y")),
+                float(node.getAttribute("width")),
+                float(node.getAttribute("height"))
+            ]
+        else:
+            if self.debug:
+                print("Unknown textbox element <%s>" % (node.nodeName,))
+        return None
+
     def convert(self):
         if self.converted_result: return self.converted_result
         dom = minidom.parseString(self.svg_string)
@@ -187,10 +264,14 @@ class SVG2Cairo(object):
         except:
             raise Exception("viewBox attribute ('%s') was too complex for me (strange width/height)" % (viewBox,))
 
+        textbox = None
+        rotator = None
         nodelist = dom.documentElement.getElementsByTagName("*")
         for c in nodelist:
             if c.nodeType == 1:
                 if c.nodeName in self.IGNORE_ELEMENTS: continue
+                if c.getAttribute("id") == "textbox":
+                    textbox = self.read_textbox(c)
                 handler = getattr(self, "parse_" + c.nodeName, None)
                 if handler:
                     result = handler(c)
@@ -212,10 +293,13 @@ class SVG2Cairo(object):
                 else:
                     if self.debug:
                         print("Unknown SVG element <%s>" % (c.nodeName,))
-        self.converted_result = {"width": width, "height": height, "instructions": instructions}
+        self.converted_result = {
+            "width": width, "height": height, "instructions": instructions,
+            "textbox": textbox, "rotator": rotator
+        }
         return self.converted_result
 
-    def render_to_context_at_size(self, context, x, y, width, height):
+    def render_to_context_at_size_with_text(self, context, x, y, width, height, text=None, font_name=None):
         """Renders this SVG inside a box of max-size width x height at 0,0
            This preserves aspect ratio.
         """
@@ -236,7 +320,13 @@ class SVG2Cairo(object):
         height_scale = height / result["height"]
         scale = min(width_scale, height_scale)
         context.translate(x, y)
-        context.scale(scale, scale)
+        try:
+            context.scale(scale, scale)
+        except:
+            print("SCALE FAIL", scale)
+            import sys
+            sys.exit(1)
+            raise
 
         for cmd, params in result.get("instructions", []):
             if self.debug: print (cmd, params)
@@ -244,6 +334,24 @@ class SVG2Cairo(object):
                 getattr(context, cmd)(params[0] * (1/scale))
             else:
                 getattr(context, cmd)(*params)
+
+        if text and font_name:
+            rt = result.get("textbox", None)
+            if rt:
+                ly = fit_text(text, font_name, rt[2], rt[3])
+                sz = ly.get_pixel_size()
+                dx = (rt[2] - sz.width) / 2
+                dy = (rt[3] - sz.height) / 2
+                context.move_to(rt[0] + dx, rt[1] + dy)
+                context.set_source_rgba(0, 0, 0, 1)
+                PangoCairo.show_layout(context, ly)
+                if self.debug:
+                    print("Rendered text", repr(text), "from layout with size", ly.get_pixel_size(),
+                        "at position", rt[0] + dx, rt[1] + dy, "inside constraint textbox", rt)
+            else:
+                if self.debug: print("No textbox to render text into")
+        else:
+            if self.debug: print("Not rendering any text")
 
         context.restore()
         return {"width": result["width"] * scale, "height": result["height"] * scale}
@@ -255,7 +363,8 @@ class SVG2Cairo(object):
         scale_h = int(result["height"] * SCALE)
         base = cairo.ImageSurface(cairo.FORMAT_ARGB32, scale_w, scale_h)
         ctx = cairo.Context(base)
-        self.render_to_context_at_size(ctx, 0, 0, scale_w, scale_h)
+        self.render_to_context_at_size_with_text(ctx, 0, 0, scale_w, scale_h,
+            "This is a journey\ninto sound.\nStereophonic sound.", "Impact")
         base.write_to_png(to_png)
 
 
